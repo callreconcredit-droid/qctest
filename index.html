@@ -504,6 +504,13 @@
     // Init
     window.addEventListener('DOMContentLoaded', ()=>{
       loadLocal();
+      // Show ALL default headers immediately on first load
+      setSchema(DEFAULT_SCHEMA);
+      // If user had a custom schema saved, apply it after defaults render
+      const saved = JSON.parse(localStorage.getItem('schema_fields')||'null');
+      if(saved && saved.length){ setSchema(saved); }
+      $('#ghOwner').focus();
+    });
       loadSchema();
       $('#ghOwner').focus();
     });
