@@ -3,516 +3,472 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Data Entry → GitHub JSON (Dynamic Excel Fields)</title>
-  <meta name="description" content="Single-file GitHub Pages app to enter data, import from Excel, and append everything to one JSON file in a repo. Now dynamically uses *all* Excel columns as fields." />
+  <title>QC Data Entry</title>
+  <meta name="description" content="Header-first QC data entry with section navigation, Excel upload, and GitHub JSON storage (single file)." />
   <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ["Inter", "ui-sans-serif", "system-ui", "-apple-system", "Segoe UI", "Roboto", "Ubuntu", "Cantarell", "Noto Sans", "Helvetica Neue", "Arial", "sans-serif"] },
+          boxShadow: { soft: "0 8px 25px -12px rgb(0 0 0 / 0.2)" },
+        },
+      },
+    }
+  </script>
   <!-- SheetJS for Excel parsing -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <style>
-    .kbd{border:1px solid #e5e7eb;border-bottom-width:3px;border-radius:.375rem;padding:.125rem .375rem;font-size:.75rem}
-    #messageBox{transition:all .3s ease}
-    .input{border:1px solid #e5e7eb;border-radius:0.75rem;padding:0.5rem 0.75rem;width:100%}
-    .label{font-size:.875rem;color:#6b7280;margin-bottom:.25rem;display:block}
+    /* top-center toast */
+    #toast { transform: translate(-50%, -20px) scale(0.98); opacity: 0; }
+    #toast.show { transform: translate(-50%, 0) scale(1); opacity: 1; }
+    .focus-ring:focus { outline: none; box-shadow: 0 0 0 3px rgba(59,130,246,0.45); }
   </style>
 </head>
-<body class="bg-gray-100 min-h-screen">
-  <!-- Toast / Message Box (top center) -->
-  <div id="messageBox" class="fixed top-4 left-1/2 -translate-x-1/2 z-50 p-4 rounded-md shadow-lg bg-white text-gray-800 opacity-0 scale-95"></div>
+<body class="min-h-screen bg-slate-50">
+  <!-- Toast / Message Box (top-middle) -->
+  <div id="toast" class="fixed top-4 left-1/2 z-50 px-4 py-3 rounded-xl bg-slate-900 text-white text-sm shadow-lg transition-all duration-300"></div>
 
-  <main class="max-w-6xl mx-auto p-4 md:p-8">
-    <header class="mb-6 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
-      <div>
-        <h1 class="text-3xl md:text-4xl font-bold text-gray-900">Data Entry → GitHub JSON</h1>
-        <p class="text-gray-600">Dynamically uses <span class="font-semibold">all columns</span> from your Excel file as fields. Append to a single JSON file.</p>
-      </div>
-      <div class="flex items-center gap-2 text-sm">
-        <span class="kbd">GitHub</span>
-        <span class="text-gray-400">•</span>
-        <span class="kbd">JSON</span>
-        <span class="text-gray-400">•</span>
-        <span class="kbd">Excel</span>
-      </div>
-    </header>
+  <!-- Header / App Bar -->
+  <header class="sticky top-0 z-40 backdrop-blur supports-[backdrop-filter]:bg-white/70 bg-white/90 border-b border-slate-200">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-16 gap-3">
+        <div class="flex items-center gap-3 min-w-0">
+          <div class="h-9 w-9 rounded-xl bg-gradient-to-br from-indigo-500 via-blue-500 to-cyan-400 shadow-soft"></div>
+          <div class="truncate">
+            <h1 class="text-lg font-semibold text-slate-900 leading-tight truncate">QC Data Entry</h1>
+            <p class="text-xs text-slate-500 -mt-0.5 truncate">Section-focused entry · Excel import · Save to GitHub (single JSON)</p>
+          </div>
+        </div>
 
-    <!-- GitHub Connection Card -->
-    <section class="bg-white rounded-2xl shadow p-5 md:p-6 mb-6">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-xl font-semibold">GitHub Connection</h2>
-        <button id="btnConnect" class="px-3 py-2 rounded-xl bg-gray-900 text-white hover:bg-gray-800">Connect</button>
-      </div>
-      <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-3">
-        <div>
-          <label class="label">Owner / Org</label>
-          <input id="ghOwner" class="input" placeholder="your-username-or-org" />
-        </div>
-        <div>
-          <label class="label">Repository</label>
-          <input id="ghRepo" class="input" placeholder="your-repo" />
-        </div>
-        <div>
-          <label class="label">Branch</label>
-          <input id="ghBranch" class="input" value="main" />
-        </div>
-        <div>
-          <label class="label">JSON Path in Repo</label>
-          <input id="ghPath" class="input" value="data/records.json" />
-        </div>
-        <div class="lg:col-span-4">
-          <label class="label">GitHub Personal Access Token (Fine-grained or classic, repo:contents)</label>
-          <input id="ghToken" type="password" class="input" placeholder="ghp_... or github_pat_..." />
-          <p class="text-xs text-gray-500 mt-1">Tip: For public Pages, prefer a fine‑grained token scoped only to this repo and "Contents: Read & Write".</p>
-        </div>
-      </div>
-      <div class="mt-3 flex flex-wrap gap-2">
-        <button id="btnSaveGhSettings" class="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200">Save Settings (Local)</button>
-        <button id="btnTestLoad" class="px-3 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-500">Test Load JSON</button>
-        <button id="btnCreateIfMissing" class="px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-500">Create File If Missing</button>
-      </div>
-    </section>
+        <!-- Section Nav -->
+        <nav class="hidden md:flex items-center gap-1">
+          <button data-jump="#meta" class="px-3 py-2 text-sm rounded-lg hover:bg-slate-100 text-slate-700">Meta</button>
+          <button data-jump="#sec1" class="px-3 py-2 text-sm rounded-lg hover:bg-slate-100 text-slate-700">Section 1</button>
+          <button data-jump="#sec2" class="px-3 py-2 text-sm rounded-lg hover:bg-slate-100 text-slate-700">Section 2</button>
+          <button data-jump="#sec3" class="px-3 py-2 text-sm rounded-lg hover:bg-slate-100 text-slate-700">Section 3</button>
+          <button data-jump="#sec4" class="px-3 py-2 text-sm rounded-lg hover:bg-slate-100 text-slate-700">Section 4</button>
+          <button data-jump="#sec5" class="px-3 py-2 text-sm rounded-lg hover:bg-slate-100 text-slate-700">Section 5</button>
+        </nav>
 
-    <!-- Schema (Fields) Card -->
-    <section class="bg-white rounded-2xl shadow p-5 md:p-6 mb-6">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-xl font-semibold">Fields / Schema</h2>
-        <div class="flex gap-2">
-          <button id="btnUseExcelHeaders" class="px-3 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-500">Use Headers From Excel Preview</button>
-          <button id="btnResetSchema" class="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200">Reset</button>
-        </div>
-      </div>
-      <p class="text-gray-600 text-sm mb-3">List of field names used for manual entry and JSON keys. Automatically fills from your Excel preview, including <em>all columns</em>.</p>
-      <textarea id="schemaBox" rows="3" class="w-full input" placeholder="One field per line"></textarea>
-      <div class="text-xs text-gray-500 mt-2">Notes: Trailing spaces are trimmed; names are used as JSON keys. Keep one field per line.</div>
-    </section>
-
-    <!-- Data Entry Card (dynamic) -->
-    <section class="bg-white rounded-2xl shadow p-5 md:p-6 mb-6">
-      <h2 class="text-xl font-semibold mb-4">Manual Data Entry</h2>
-      <div id="dynamicForm" class="grid md:grid-cols-2 lg:grid-cols-3 gap-3"></div>
-      <div class="mt-4 flex flex-wrap gap-2">
-        <button id="btnAddRecord" class="px-3 py-2 rounded-xl bg-gray-900 text-white hover:bg-gray-800">Add Record</button>
-        <button id="btnLoadAll" class="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200">Load Current JSON</button>
-      </div>
-
-      <div class="mt-4">
-        <h3 class="font-semibold mb-2">Current Session Records (not yet pushed)</h3>
-        <div class="overflow-auto border rounded-xl">
-          <table class="min-w-full text-sm" id="sessionTable">
-            <thead class="bg-gray-50" id="sessionThead"></thead>
-            <tbody id="sessionTbody"></tbody>
-          </table>
-        </div>
-        <div class="mt-3 flex gap-2">
-          <button id="btnPushSession" class="px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-500">Push to GitHub JSON</button>
-          <button id="btnClearSession" class="px-3 py-2 rounded-xl bg-rose-600 text-white hover:bg-rose-500">Clear Session</button>
-        </div>
-      </div>
-    </section>
-
-    <!-- Excel Import Card -->
-    <section class="bg-white rounded-2xl shadow p-5 md:p-6 mb-6">
-      <h2 class="text-xl font-semibold mb-4">Import from Excel (Select Any Rows)</h2>
-      <div class="flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
+        <!-- Actions -->
         <div class="flex items-center gap-2">
-          <input type="file" id="excelFile" accept=".xlsx,.xls" class="block" />
-          <button id="btnParseExcel" class="px-3 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-500">Preview</button>
+          <input id="fileInput" type="file" accept=".xlsx,.xls,.csv" class="hidden" />
+          <button id="btnUploadExcel" class="px-3 py-2 text-sm rounded-lg bg-slate-900 text-white hover:opacity-95 focus-ring">Upload Excel</button>
+          <button id="btnAddRecord" class="px-3 py-2 text-sm rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 focus-ring">Add Record</button>
+          <button id="btnSaveGitHub" class="px-3 py-2 text-sm rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 focus-ring">Save to GitHub</button>
+          <button id="btnSetToken" class="px-3 py-2 text-sm rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 focus-ring">Set Token</button>
         </div>
-        <div class="text-sm text-gray-600">Reads all columns from the first sheet and shows them below.</div>
       </div>
+    </div>
+  </header>
 
-      <div id="excelPreviewWrap" class="mt-4 hidden">
-        <div class="overflow-auto border rounded-xl">
-          <table class="min-w-full text-sm" id="excelTable">
-            <thead class="bg-gray-50" id="excelThead"></thead>
-            <tbody id="excelTbody"></tbody>
-          </table>
-        </div>
-        <div class="mt-3 flex gap-2">
-          <button id="btnImportSelected" class="px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-500">Import Selected Rows to Session</button>
-          <button id="btnClearExcel" class="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200">Clear Preview</button>
-        </div>
+  <!-- Main -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+    <!-- Counters + status -->
+    <section class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div class="p-4 bg-white rounded-xl shadow-soft border border-slate-200">
+        <div class="text-xs text-slate-500">Pending new records</div>
+        <div id="pendingCount" class="text-2xl font-semibold text-slate-900">0</div>
+      </div>
+      <div class="p-4 bg-white rounded-xl shadow-soft border border-slate-200">
+        <div class="text-xs text-slate-500">Loaded from Excel</div>
+        <div id="excelCount" class="text-2xl font-semibold text-slate-900">0</div>
+      </div>
+      <div class="p-4 bg-white rounded-xl shadow-soft border border-slate-200">
+        <div class="text-xs text-slate-500">GitHub connection</div>
+        <div id="ghStatus" class="text-sm font-medium text-slate-900">Not connected</div>
+        <div class="mt-1 text-xs text-slate-500">Repo: <code id="ghRepoInfo"></code></div>
       </div>
     </section>
 
-    <!-- Live JSON snapshot -->
-    <section class="bg-white rounded-2xl shadow p-5 md:p-6">
-      <div class="flex items-center justify-between mb-3">
-        <h2 class="text-xl font-semibold">Live File Snapshot</h2>
-        <button id="btnRefreshSnapshot" class="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200">Refresh</button>
+    <!-- Meta / General fields -->
+    <section id="meta" class="mb-8">
+      <div class="mb-3 flex items-center gap-2">
+        <h2 class="text-lg font-semibold text-slate-900">Meta</h2>
+        <span class="text-xs px-2 py-1 rounded-full bg-slate-100 text-slate-600">Required basics</span>
       </div>
-      <pre id="jsonSnapshot" class="text-xs md:text-sm bg-gray-50 border rounded-xl p-3 overflow-auto h-64">(No data loaded yet)</pre>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div class="flex flex-col gap-1"><label class="text-sm text-slate-700">MONTH</label><input data-key="MONTH" type="text" class="input"></div>
+        <div class="flex flex-col gap-1"><label class="text-sm text-slate-700">CHECKED DATE</label><input data-key="CHECKED DATE" type="date" class="input"></div>
+        <div class="flex flex-col gap-1"><label class="text-sm text-slate-700">PROCESS DATE</label><input data-key="PROCESS DATE" type="date" class="input"></div>
+        <div class="flex flex-col gap-1"><label class="text-sm text-slate-700">PV OFFICER</label><input data-key="PV OFFICER" type="text" class="input"></div>
+        <div class="flex flex-col gap-1"><label class="text-sm text-slate-700">CALL RECORDING / MOBILE NO</label><input data-key="CALL RECORDING / MOBILE NO" type="text" class="input"></div>
+        <div class="flex flex-col gap-1"><label class="text-sm text-slate-700">APP ID</label><input data-key="APP ID" type="text" class="input"></div>
+        <div class="flex flex-col gap-1"><label class="text-sm text-slate-700">TYPE</label><input data-key="TYPE" type="text" class="input"></div>
+        <div class="flex flex-col gap-1 sm:col-span-2 lg:col-span-3"><label class="text-sm text-slate-700">QC COMMENTS</label><textarea data-key="QC COMMENTS" class="input" rows="2"></textarea></div>
+        <div class="flex flex-col gap-1"><label class="text-sm text-slate-700">NON-CRITICAL MISTAKES</label><input data-key="NON-CRITICAL MISTAKES" type="text" class="input"></div>
+        <div class="flex flex-col gap-1"><label class="text-sm text-slate-700">NON-CRITICAL MISTAKE VALUES</label><input data-key="NON-CRITICAL MISTAKE VALUES" type="text" class="input"></div>
+        <div class="flex flex-col gap-1"><label class="text-sm text-slate-700">CRITICAL MISTAKES</label><input data-key="CRITICAL MISTAKES" type="text" class="input"></div>
+        <div class="flex flex-col gap-1"><label class="text-sm text-slate-700">CRITICAL VALUE</label><input data-key="CRITICAL VALUE" type="text" class="input"></div>
+        <div class="flex flex-col gap-1 sm:col-span-2 lg:col-span-3"><label class="text-sm text-slate-700">VERIFICATION SCORE COMMENTS</label><textarea data-key="VERIFICATION SCORE COMMENTS" class="input" rows="2"></textarea></div>
+        <div class="flex flex-col gap-1"><label class="text-sm text-slate-700">TOTAL MARKS</label><input data-key="TOTAL MARKS" type="number" step="0.01" class="input"></div>
+      </div>
+    </section>
+
+    <!-- Section 1 -->
+    <section id="sec1" class="mb-8">
+      <div class="mb-3 flex items-center gap-2">
+        <h2 class="text-lg font-semibold text-slate-900">Section 1</h2>
+        <span class="text-xs px-2 py-1 rounded-full bg-indigo-50 text-indigo-700">Identity & KYC</span>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div class="flex flex-col gap-1"><label class="text-sm text-slate-700">GREETINGS</label><input data-key="GREETINGS" type="text" class="input"></div>
+        <div class="flex flex-col gap-1"><label class="text-sm text-slate-700">KYC CORRECTNESS</label><input data-key="KYC CORRECTNESS" type="text" class="input"></div>
+        <div class="flex flex-col gap-1"><label class="text-sm text-slate-700">KYC CHECK</label><input data-key="KYC CHECK" type="text" class="input"></div>
+        <div class="flex flex-col gap-1"><label class="text-sm text-slate-700">SELFIE CHECK</label><input data-key="SELFIE CHECK" type="text" class="input"></div>
+        <div class="flex flex-col gap-1"><label class="text-sm text-slate-700">KYC CHECKED CORRECTLY BY THE AGENT</label><input data-key="KYC CHECKED CORRECTLY BY THE AGENT" type="text" class="input"></div>
+        <div class="flex flex-col gap-1"><label class="text-sm text-slate-700">CUSTOMER NAME</label><input data-key="CUSTOMER NAME" type="text" class="input"></div>
+        <div class="flex flex-col gap-1"><label class="text-sm text-slate-700">NIC NUMBER</label><input data-key="NIC NUMBER" type="text" class="input"></div>
+        <div class="flex flex-col gap-1 sm:col-span-2 lg:col-span-3"><label class="text-sm text-slate-700">CURRENT LIVING ADDRESS</label><input data-key="CURRENT LIVING ADDRESS" type="text" class="input"></div>
+        <div class="flex flex-col gap-1"><label class="text-sm text-slate-700">EMAIL ADDRESS</label><input data-key="EMAIL ADDRESS" type="email" class="input"></div>
+      </div>
+    </section>
+
+    <!-- Section 2 -->
+    <section id="sec2" class="mb-8">
+      <div class="mb-3 flex items-center gap-2">
+        <h2 class="text-lg font-semibold text-slate-900">Section 2</h2>
+        <span class="text-xs px-2 py-1 rounded-full bg-fuchsia-50 text-fuchsia-700">Loan & Repayment</span>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div class="flex flex-col gap-1"><label class="text-sm text-slate-700">LOAN PURPOSE</label><input data-key="LOAN PURPOSE" type="text" class="input"></div>
+        <div class="flex flex-col gap-1"><label class="text-sm text-slate-700">BANK ACCOUNT DETAILS CHECK</label><input data-key="BANK ACCOUNT DETAILS CHECK" type="text" class="input"></div>
+        <div class="flex flex-col gap-1 sm:col-span-2 lg:col-span-3"><label class="text-sm text-slate-700">PROMOTE REPAYMENT CHANNELS</label><input data-key="PROMOTE REPAYMENT CHANNELS" type="text" class="input"></div>
+        <div class="flex flex-col gap-1 sm:col-span-2 lg:col-span-3"><label class="text-sm text-slate-700">CUSTOMER RELATIONSHIP WITH CX & NAME</label><input data-key="CUSTOMER RELATIONSHIP WITH CX & NAME" type="text" class="input"></div>
+        <div class="flex flex-col gap-1 sm:col-span-2 lg:col-span-3"><label class="text-sm text-slate-700">RELATIVE VERIFICATION PROCESS</label><input data-key="RELATIVE VERIFICATION PROCESS" type="text" class="input"></div>
+      </div>
+    </section>
+
+    <!-- Section 3 -->
+    <section id="sec3" class="mb-8">
+      <div class="mb-3 flex items-center gap-2">
+        <h2 class="text-lg font-semibold text-slate-900">Section 3</h2>
+        <span class="text-xs px-2 py-1 rounded-full bg-amber-50 text-amber-700">Workplace & Salary</span>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div class="flex flex-col gap-1 sm:col-span-2 lg:col-span-3"><label class="text-sm text-slate-700">CUSTOMER EMPLOYMENT INFORMATION</label><input data-key="CUSTOMER EMPLOYMENT INFORMATION" type="text" class="input"></div>
+        <div class="flex flex-col gap-1"><label class="text-sm text-slate-700">CUSTOMER NET SALARY (BASIC/DEDUCTIONS)</label><input data-key="CUSTOMER NET SALARY (BASIC/DEDUCTIONS)" type="text" class="input"></div>
+        <div class="flex flex-col gap-1 sm:col-span-2 lg:col-span-3"><label class="text-sm text-slate-700">WP VERIFICATION PROCESS</label><input data-key="WP VERIFICATION PROCESS" type="text" class="input"></div>
+        <div class="flex flex-col gap-1 sm:col-span-2 lg:col-span-3"><label class="text-sm text-slate-700">WP REQUIRED DOCUMENT ADDED</label><input data-key="WP REQUIRED DOCUMENT ADDED" type="text" class="input"></div>
+      </div>
+    </section>
+
+    <!-- Section 4 -->
+    <section id="sec4" class="mb-8">
+      <div class="mb-3 flex items-center gap-2">
+        <h2 class="text-lg font-semibold text-slate-900">Section 4</h2>
+        <span class="text-xs px-2 py-1 rounded-full bg-emerald-50 text-emerald-700">Loan Conditions & Risk</span>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div class="flex flex-col gap-1"><label class="text-sm text-slate-700">LOAN RANGE</label><input data-key="LOAN RANGE" type="text" class="input"></div>
+        <div class="flex flex-col gap-1"><label class="text-sm text-slate-700">LOAN TENOR</label><input data-key="LOAN TENOR" type="text" class="input"></div>
+        <div class="flex flex-col gap-1 sm:col-span-2 lg:col-span-3"><label class="text-sm text-slate-700">LOAN CONDITIONS</label><input data-key="LOAN CONDITIONS" type="text" class="input"></div>
+        <div class="flex flex-col gap-1 sm:col-span-2 lg:col-span-3"><label class="text-sm text-slate-700">PROMOTING REPEAT LOANS</label><input data-key="PROMOTING REPEAT LOANS" type="text" class="input"></div>
+        <div class="flex flex-col gap-1 sm:col-span-2 lg:col-span-3"><label class="text-sm text-slate-700">EXTRA NUMBERS (SE/CE/BO)</label><input data-key="EXTRA NUMBERS (SE/CE/BO)" type="text" class="input"></div>
+        <div class="flex flex-col gap-1 sm:col-span-2 lg:col-span-3"><label class="text-sm text-slate-700">CUSTOMER FRAUD MARKS - QC REFERENCE</label><input data-key="CUSTOMER FRAUD MARKS - QC REFERENCE" type="text" class="input"></div>
+      </div>
+    </section>
+
+    <!-- Section 5 -->
+    <section id="sec5" class="mb-10">
+      <div class="mb-3 flex items-center gap-2">
+        <h2 class="text-lg font-semibold text-slate-900">Section 5</h2>
+        <span class="text-xs px-2 py-1 rounded-full bg-cyan-50 text-cyan-700">Final Checks</span>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div class="flex items-center gap-3"><input id="videoCheck" data-key="VIDEO CALL VERIFIED" type="checkbox" class="h-4 w-4"><label for="videoCheck" class="text-sm text-slate-700">VIDEO CALL VERIFIED</label></div>
+        <div class="flex flex-col gap-1"><label class="text-sm text-slate-700">QC AGENT</label><input data-key="QC AGENT" type="text" class="input"></div>
+      </div>
+    </section>
+
+    <!-- Pending records preview -->
+    <section class="mb-20">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-base font-semibold text-slate-900">Pending New Records</h3>
+        <div class="flex items-center gap-2">
+          <button id="btnClearPending" class="px-3 py-1.5 text-sm rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100">Clear</button>
+          <button id="btnDownloadJson" class="px-3 py-1.5 text-sm rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100">Download JSON</button>
+        </div>
+      </div>
+      <div id="pendingPreview" class="bg-white border border-slate-200 rounded-xl p-4 text-xs text-slate-700 whitespace-pre overflow-x-auto max-h-72"></div>
     </section>
   </main>
 
+  <!-- Token Modal -->
+  <div id="tokenModal" class="hidden fixed inset-0 z-50 items-center justify-center">
+    <div class="absolute inset-0 bg-slate-900/50"></div>
+    <div class="relative bg-white w-[28rem] max-w-[95vw] rounded-2xl shadow-2xl border border-slate-200 p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-lg font-semibold text-slate-900">Set GitHub Token</h3>
+        <button id="closeToken" class="p-2 rounded-lg hover:bg-slate-100" aria-label="Close">✕</button>
+      </div>
+      <label class="text-sm text-slate-700">Fine‑grained PAT (contents:write)</label>
+      <input id="ghToken" type="password" class="input w-full mt-1" placeholder="Paste token" />
+      <p class="text-xs text-slate-500 mt-3">Token is stored only in your browser (localStorage) and used to call GitHub directly.</p>
+      <div class="mt-5 flex items-center justify-end gap-2">
+        <button id="btnSaveToken" class="px-3 py-2 text-sm rounded-lg bg-slate-900 text-white hover:opacity-95">Save</button>
+      </div>
+    </div>
+  </div>
+
   <script>
-    // ===== Utilities =====
-    const $ = (sel) => document.querySelector(sel);
-    const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+    // ---------- Hardcoded GitHub target ----------
+    const GH = Object.freeze({ owner: 'callreconcredit-droid', repo: 'octest', path: 'data/qc_records.json', branch: 'main' });
 
-    function toast(msg, type = 'info'){
-      const box = document.getElementById('messageBox');
-      box.textContent = msg;
-      box.className = 'fixed top-4 left-1/2 -translate-x-1/2 z-50 p-4 rounded-md shadow-lg ' + (type==='error' ? 'bg-rose-50 text-rose-700 border border-rose-200' : type==='success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-white text-gray-800 border');
-      box.style.opacity = '1';
-      box.style.transform = 'translateX(-50%) scale(1)';
-      setTimeout(()=>{
-        box.style.opacity = '0';
-        box.style.transform = 'translateX(-50%) scale(.95)';
-      }, 2500);
-    }
+    // ---------- Utilities ----------
+    const $ = (sel, root=document) => root.querySelector(sel);
+    const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
+    const showToast = (msg, type = "info") => {
+      const el = $('#toast');
+      el.textContent = msg;
+      el.className = `fixed top-4 left-1/2 z-50 px-4 py-3 rounded-xl text-sm shadow-lg transition-all duration-300 show ${
+        type === 'success' ? 'bg-emerald-600 text-white' : type === 'error' ? 'bg-rose-600 text-white' : 'bg-slate-900 text-white'
+      }`;
+      el.classList.add('show');
+      setTimeout(()=> el.classList.remove('show'), 3000);
+    };
 
-    // ===== Schema management =====
-    const DEFAULT_SCHEMA = [
-      'MONTH',
-      'CHECKED DATE',
-      'PROSSESS DATE...QC REFERNCE',
-      'SECTION 05',
-      'VEDIO CALL VERIFIED',
-      'QC AGENT'
+    const inputClass = 'input px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-900 placeholder-slate-400 focus-ring';
+    window.addEventListener('DOMContentLoaded', () => {
+      $$('.input').forEach(i => i.className = inputClass);
+      $('#ghRepoInfo').textContent = `${GH.owner}/${GH.repo} • ${GH.branch} • ${GH.path}`;
+      autoConnect();
+    });
+
+    // Field list (as given) to validate Excel headers and build records
+    const ALL_FIELDS = [
+      'MONTH','CHECKED DATE','PROCESS DATE','PV OFFICER','CALL RECORDING / MOBILE NO','APP ID','TYPE','QC COMMENTS','NON-CRITICAL MISTAKES','NON-CRITICAL MISTAKE VALUES','CRITICAL MISTAKES','CRITICAL VALUE','VERIFICATION SCORE COMMENTS','TOTAL MARKS',
+      // Section 1
+      'GREETINGS','KYC CORRECTNESS','KYC CHECK','SELFIE CHECK','KYC CHECKED CORRECTLY BY THE AGENT','CUSTOMER NAME','NIC NUMBER','CURRENT LIVING ADDRESS','EMAIL ADDRESS',
+      // Section 2
+      'LOAN PURPOSE','BANK ACCOUNT DETAILS CHECK','PROMOTE REPAYMENT CHANNELS','CUSTOMER RELATIONSHIP WITH CX & NAME','RELATIVE VERIFICATION PROCESS',
+      // Section 3
+      'CUSTOMER EMPLOYMENT INFORMATION','CUSTOMER NET SALARY (BASIC/DEDUCTIONS)','WP VERIFICATION PROCESS','WP REQUIRED DOCUMENT ADDED',
+      // Section 4
+      'LOAN RANGE','LOAN TENOR','LOAN CONDITIONS','PROMOTING REPEAT LOANS','EXTRA NUMBERS (SE/CE/BO)','CUSTOMER FRAUD MARKS - QC REFERENCE',
+      // Section 5
+      'VIDEO CALL VERIFIED','QC AGENT'
     ];
 
-    function readSchema(){
-      const lines = $('#schemaBox').value.split(/
-?
-/)
-        .map(s=>s.trim())
-        .filter(Boolean);
-      return lines.length ? lines : DEFAULT_SCHEMA;
-    }
+    // Local state
+    const state = {
+      pending: [],        // records not yet saved
+      excelCount: 0,
+      sha: null,
+      connected: false,
+    };
 
-    function setSchema(fields){
-      const uniq = Array.from(new Set(fields.map(f=> (f||'').toString().trim()))).filter(Boolean);
-      $('#schemaBox').value = uniq.join('
-');
-      buildDynamicForm(uniq);
-      refreshSessionTableHeaders(uniq);
-      localStorage.setItem('schema_fields', JSON.stringify(uniq));
-    }
-
-    function loadSchema(){
-      const saved = JSON.parse(localStorage.getItem('schema_fields')||'null');
-      setSchema(saved && saved.length ? saved : DEFAULT_SCHEMA);
-    }
-
-    function buildDynamicForm(fields){
-      const cont = $('#dynamicForm');
-      cont.innerHTML = '';
-      fields.forEach(name=>{
-        const wrap = document.createElement('div');
-        wrap.innerHTML = `<label class="label">${name}</label><input class="input dyn" data-k="${name}">`;
-        cont.appendChild(wrap);
+    // ---------- Section jump (header nav) ----------
+    $$("[data-jump]").forEach(btn => {
+      btn.addEventListener('click', () => {
+        const target = btn.getAttribute('data-jump');
+        const el = document.querySelector(target);
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
-    }
+    });
 
-    function refreshSessionTableHeaders(fields){
-      const thead = $('#sessionThead');
-      thead.innerHTML = '';
-      const tr = document.createElement('tr');
-      fields.forEach(h=>{
-        const th = document.createElement('th'); th.className='p-2 text-left'; th.textContent=h; tr.appendChild(th);
-      });
-      const thx = document.createElement('th'); thx.className='p-2 text-left'; thx.textContent='—'; tr.appendChild(thx);
-      thead.appendChild(tr);
-    }
+    // ---------- Excel Upload ----------
+    $('#btnUploadExcel').addEventListener('click', () => $('#fileInput').click());
+    $('#fileInput').addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      try {
+        const buf = await file.arrayBuffer();
+        const wb = XLSX.read(buf, { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        if (!ws) throw new Error('No sheet found');
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+        if (!rows.length) throw new Error('Sheet has no rows');
 
-    function normalizeRecordDynamic(obj){
-      const fields = readSchema();
-      const rec = {};
-      fields.forEach(k=>{ rec[k] = obj[k] ?? ''; });
-      return rec;
-    }
+        // Validate headers
+        const headers = Object.keys(rows[0]);
+        const missing = ALL_FIELDS.filter(f => !headers.includes(f));
+        if (missing.length) {
+          showToast(`Missing headers in Excel: ${missing.slice(0,6).join(', ')}${missing.length>6?' …':''}`, 'error');
+        }
 
-    // ===== Local settings =====
-    function saveLocal(){
-      const cfg = getGhCfg();
-      localStorage.setItem('gh_cfg', JSON.stringify(cfg));
-      toast('Settings saved locally.', 'success');
-    }
-    function loadLocal(){
-      try{
-        const cfg = JSON.parse(localStorage.getItem('gh_cfg')||'{}');
-        if(cfg.owner) $('#ghOwner').value = cfg.owner;
-        if(cfg.repo) $('#ghRepo').value = cfg.repo;
-        if(cfg.branch) $('#ghBranch').value = cfg.branch;
-        if(cfg.path) $('#ghPath').value = cfg.path;
-        if(cfg.token) $('#ghToken').value = cfg.token; // optional
-      }catch{ /* ignore */ }
-    }
+        // Keep only recognized headers
+        const cleaned = rows.map(r => {
+          const obj = {};
+          ALL_FIELDS.forEach(f => obj[f] = r[f] ?? '');
+          return obj;
+        });
 
-    function getGhCfg(){
-      return {
-        owner: $('#ghOwner').value.trim(),
-        repo: $('#ghRepo').value.trim(),
-        branch: $('#ghBranch').value.trim() || 'main',
-        path: $('#ghPath').value.trim() || 'data/records.json',
-        token: $('#ghToken').value.trim()
-      };
-    }
-
-    function ghHeaders(token){
-      return {
-        'Accept':'application/vnd.github+json',
-        'Authorization': token ? `Bearer ${token}` : undefined,
-        'X-GitHub-Api-Version':'2022-11-28',
-        'Content-Type':'application/json'
-      };
-    }
-
-    function contentsUrl({owner, repo, path}){
-      return `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodeURIComponent(path)}`;
-    }
-
-    async function ghGetFile(cfg){
-      const url = contentsUrl(cfg) + `?ref=${encodeURIComponent(cfg.branch)}`;
-      const res = await fetch(url, { headers: ghHeaders(cfg.token) });
-      if(res.status === 404) return { status: 404 };
-      if(!res.ok){
-        const t = await res.text();
-        throw new Error(`GitHub GET failed: ${res.status} ${t}`);
+        state.pending.push(...cleaned);
+        state.excelCount += cleaned.length;
+        updateCounters();
+        renderPendingPreview();
+        showToast(`Loaded ${cleaned.length} row(s) from ${file.name}`, 'success');
+        e.target.value = '';
+      } catch (err) {
+        console.error(err);
+        showToast(`Excel import failed: ${err.message}`, 'error');
       }
-      return await res.json();
+    });
+
+    // ---------- Build a record from on-page inputs ----------
+    const collectFormRecord = () => {
+      const rec = {};
+      ALL_FIELDS.forEach(key => {
+        const el = document.querySelector(`[data-key="${CSS.escape(key)}"]`);
+        if (!el) { rec[key] = ''; return; }
+        if (el.type === 'checkbox') rec[key] = el.checked ? 'Yes' : 'No';
+        else rec[key] = (el.value ?? '').toString().trim();
+      });
+      return rec;
+    };
+
+    $('#btnAddRecord').addEventListener('click', () => {
+      const rec = collectFormRecord();
+      if (!rec['APP ID']) {
+        showToast('Please enter an APP ID before adding.', 'error');
+        return;
+      }
+      state.pending.push(rec);
+      updateCounters();
+      renderPendingPreview();
+      showToast('Record added to pending list.', 'success');
+    });
+
+    $('#btnClearPending').addEventListener('click', () => {
+      state.pending = [];
+      updateCounters();
+      renderPendingPreview();
+      showToast('Pending list cleared.');
+    });
+
+    $('#btnDownloadJson').addEventListener('click', () => {
+      const blob = new Blob([JSON.stringify({ records: state.pending, updatedAt: new Date().toISOString() }, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'qc_records.json'; a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    function updateCounters() {
+      $('#pendingCount').textContent = state.pending.length.toString();
+      $('#excelCount').textContent = state.excelCount.toString();
     }
 
-    async function ghPutFile(cfg, contentJson, sha = undefined, message = 'Update records.json'){
-      const url = contentsUrl(cfg);
+    function renderPendingPreview() {
+      const box = $('#pendingPreview');
+      box.textContent = JSON.stringify(state.pending.slice(-20), null, 2) + (state.pending.length>20 ? `
+… (${state.pending.length-20} more)` : '');
+    }
+
+    // ---------- Token Modal ----------
+    const tokenModal = $('#tokenModal');
+    const ghTokenInput = $('#ghToken');
+    $('#btnSetToken').addEventListener('click', () => {
+      ghTokenInput.value = localStorage.getItem('qc-gh-token') || '';
+      tokenModal.classList.remove('hidden'); tokenModal.classList.add('flex');
+    });
+    $('#closeToken').addEventListener('click', () => {
+      tokenModal.classList.add('hidden'); tokenModal.classList.remove('flex');
+    });
+    $('#btnSaveToken').addEventListener('click', () => {
+      localStorage.setItem('qc-gh-token', ghTokenInput.value.trim());
+      tokenModal.classList.add('hidden'); tokenModal.classList.remove('flex');
+      showToast('Token saved locally.', 'success');
+      autoConnect();
+    });
+
+    // ---------- GitHub API helpers ----------
+    const ghHeaders = () => ({
+      'Accept': 'application/vnd.github+json',
+      'Authorization': `Bearer ${localStorage.getItem('qc-gh-token') || ''}`,
+      'X-GitHub-Api-Version': '2022-11-28',
+      'Content-Type': 'application/json'
+    });
+
+    async function ghGetFile() {
+      const url = `https://api.github.com/repos/${encodeURIComponent(GH.owner)}/${encodeURIComponent(GH.repo)}/contents/${encodeURIComponent(GH.path)}?ref=${encodeURIComponent(GH.branch)}`;
+      const res = await fetch(url, { headers: ghHeaders() });
+      if (res.status === 401 || res.status === 403) throw new Error('Unauthorized: check token scopes (contents:write) and repo access');
+      if (res.status === 404) return { exists: false, sha: null, content: { records: [] } };
+      if (!res.ok) throw new Error(`GitHub GET failed: ${res.status}`);
+      const json = await res.json();
+      const decoded = atob((json.content||'').replace(/
+/g, ''));
+      let content = { records: [] };
+      try { content = JSON.parse(decoded); } catch {}
+      return { exists: true, sha: json.sha, content };
+    }
+
+    async function ghPutFile(contentObj, message, sha=null) {
       const body = {
         message,
-        content: btoa(unescape(encodeURIComponent(JSON.stringify(contentJson, null, 2)))),
-        branch: cfg.branch,
-        sha
+        content: btoa(unescape(encodeURIComponent(JSON.stringify(contentObj, null, 2)))),
+        branch: GH.branch
       };
-      const res = await fetch(url, { method:'PUT', headers: ghHeaders(cfg.token), body: JSON.stringify(body) });
-      if(!res.ok){
-        const t = await res.text();
-        throw new Error(`GitHub PUT failed: ${res.status} ${t}`);
+      if (sha) body.sha = sha;
+      const url = `https://api.github.com/repos/${encodeURIComponent(GH.owner)}/${encodeURIComponent(GH.repo)}/contents/${encodeURIComponent(GH.path)}`;
+      const res = await fetch(url, { method: 'PUT', headers: ghHeaders(), body: JSON.stringify(body) });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`GitHub PUT failed: ${res.status} ${text}`);
       }
-      return await res.json();
+      return res.json();
     }
 
-    function emptyJson(){ return { records: [] }; }
-
-    // ===== Session Records (staged before push) =====
-    const session = [];
-
-    function refreshSessionTable(){
-      const fields = readSchema();
-      const tbody = $('#sessionTbody');
-      tbody.innerHTML = '';
-      session.forEach((r, i)=>{
-        const tr = document.createElement('tr');
-        tr.innerHTML = fields.map(k=>`<td class=\"p-2\">${(r[k]??'')}</td>`).join('') + `<td class=\"p-2\"><button class=\"text-rose-600 hover:underline\" data-i=\"${i}\">Remove</button></td>`;
-        tbody.appendChild(tr);
-      });
-      $$('#sessionTbody button').forEach(btn=>{
-        btn.addEventListener('click', (e)=>{
-          const i = +e.currentTarget.dataset.i;
-          session.splice(i,1);
-          refreshSessionTable();
-        });
-      });
+    function setGhStatus(txt, ok=false) {
+      $('#ghStatus').textContent = txt;
+      $('#ghStatus').className = `text-sm font-medium ${ok ? 'text-emerald-700' : 'text-slate-900'}`;
     }
 
-    // Build dynamic record from form
-    function readFormRecord(){
-      const rec = {};
-      $$('#dynamicForm .dyn').forEach(inp=>{
-        rec[inp.dataset.k] = inp.value.trim();
-      });
-      return rec;
+    async function autoConnect() {
+      try {
+        const token = localStorage.getItem('qc-gh-token');
+        if (!token) { setGhStatus('Token not set'); return; }
+        const info = await ghGetFile();
+        state.sha = info.sha; state.connected = true;
+        setGhStatus(info.exists ? `Connected · File exists (${GH.path})` : `Connected · New file will be created (${GH.path})`, true);
+        showToast('GitHub connected.', 'success');
+      } catch (err) {
+        console.error(err);
+        state.connected = false; state.sha = null;
+        setGhStatus('Connection failed');
+        showToast(err.message || 'GitHub connection failed', 'error');
+      }
     }
 
-    // ===== GitHub Actions =====
-    $('#btnConnect').addEventListener('click', async ()=>{
-      try{
-        const cfg = getGhCfg();
-        const j = await ghGetFile(cfg);
-        if(j.status === 404){ toast('File not found. Click "Create File If Missing".', 'error'); return; }
-        toast('Connected! File found.', 'success');
-      }catch(err){ toast(err.message, 'error'); }
-    });
+    // ---------- Save to GitHub (merge on APP ID) ----------
+    $('#btnSaveGitHub').addEventListener('click', async () => {
+      if (!state.connected) { showToast('Set token and ensure connection first.', 'error'); return; }
+      if (!state.pending.length) { showToast('No pending records to save.'); return; }
+      try {
+        // Load existing
+        const current = await ghGetFile();
+        const existing = Array.isArray(current.content?.records) ? current.content.records : [];
 
-    $('#btnSaveGhSettings').addEventListener('click', saveLocal);
-    loadLocal();
-
-    $('#btnTestLoad').addEventListener('click', async ()=>{
-      try{
-        const cfg = getGhCfg();
-        const j = await ghGetFile(cfg);
-        if(j.status === 404){ toast('404: File not found on branch.', 'error'); return; }
-        const content = JSON.parse(decodeURIComponent(escape(atob(j.content))));
-        $('#jsonSnapshot').textContent = JSON.stringify(content, null, 2);
-        toast('Loaded current JSON.', 'success');
-      }catch(err){ toast(err.message, 'error'); }
-    });
-
-    $('#btnCreateIfMissing').addEventListener('click', async ()=>{
-      try{
-        const cfg = getGhCfg();
-        const check = await ghGetFile(cfg);
-        if(check.status !== 404){ toast('File already exists.', 'info'); return; }
-        await ghPutFile(cfg, emptyJson(), undefined, 'Init records.json');
-        toast('Created new JSON file.', 'success');
-      }catch(err){ toast(err.message, 'error'); }
-    });
-
-    $('#btnLoadAll').addEventListener('click', async ()=>{
-      try{
-        const cfg = getGhCfg();
-        const j = await ghGetFile(cfg);
-        if(j.status === 404){ toast('404: File not found on branch.', 'error'); return; }
-        const content = JSON.parse(decodeURIComponent(escape(atob(j.content))));
-        $('#jsonSnapshot').textContent = JSON.stringify(content, null, 2);
-        toast('Loaded current JSON.', 'success');
-      }catch(err){ toast(err.message, 'error'); }
-    });
-
-    $('#btnPushSession').addEventListener('click', async ()=>{
-      if(session.length === 0){ toast('Nothing to push. Add or import rows first.', 'error'); return; }
-      try{
-        const cfg = getGhCfg();
-        // Load latest
-        let sha, content;
-        const j = await ghGetFile(cfg);
-        if(j.status === 404){
-          content = emptyJson();
-        } else {
-          sha = j.sha;
-          content = JSON.parse(decodeURIComponent(escape(atob(j.content))));
+        // index by APP ID for merge
+        const byId = new Map(existing.map(r => [String(r['APP ID']||'').trim(), r]));
+        let added = 0, updated = 0;
+        for (const rec of state.pending) {
+          const key = String(rec['APP ID']||'').trim();
+          if (!key) { existing.push(rec); added++; continue; }
+          if (byId.has(key)) {
+            const idx = existing.findIndex(r => String(r['APP ID']||'').trim() === key);
+            if (idx >= 0) { existing[idx] = { ...existing[idx], ...rec }; updated++; }
+          } else { existing.push(rec); added++; }
         }
-        if(!Array.isArray(content.records)) content.records = [];
 
-        const fields = readSchema();
-        const stamped = session.map(r=>({ __added_at:new Date().toISOString(), ...normalizeRecordDynamic(r) }));
-        content.records.push(...stamped);
-
-        await ghPutFile(cfg, content, sha, `Append ${stamped.length} record(s)`);
-        session.splice(0, session.length);
-        refreshSessionTable();
-        $('#jsonSnapshot').textContent = JSON.stringify(content, null, 2);
-        toast('Pushed to GitHub JSON.', 'success');
-      }catch(err){ toast(err.message, 'error'); }
+        const out = { records: existing, updatedAt: new Date().toISOString() };
+        const msg = `qc: ${added} added, ${updated} updated (web save)`;
+        await ghPutFile(out, msg, current.sha);
+        state.pending = []; state.excelCount = 0; updateCounters(); renderPendingPreview();
+        showToast('Saved to GitHub ✓', 'success');
+      } catch (err) {
+        console.error(err);
+        showToast(err.message || 'Save failed', 'error');
+      }
     });
 
-    $('#btnRefreshSnapshot').addEventListener('click', ()=>$('#btnTestLoad').click());
-
-    // ===== Excel Parsing & Import =====
-    let excelRows = [];
-    let excelHeaders = [];
-
-    function getHeadersFromRows(rows){
-      const set = new Set();
-      rows.forEach(r=> Object.keys(r).forEach(k=> set.add((k||'').toString().trim())));
-      return Array.from(set).filter(Boolean);
-    }
-
-    function renderExcelPreview(rows){
-      excelRows = rows;
-      excelHeaders = getHeadersFromRows(rows);
-
-      const thead = $('#excelThead');
-      const tbody = $('#excelTbody');
-      thead.innerHTML = '';
-      tbody.innerHTML = '';
-
-      const trh = document.createElement('tr');
-      ['Select', ...excelHeaders].forEach(h=>{
-        const th = document.createElement('th'); th.className='p-2 text-left'; th.textContent=h; trh.appendChild(th);
-      });
-      thead.appendChild(trh);
-
-      rows.slice(0,500).forEach((r, i)=>{
-        const tds = excelHeaders.map(h=>`<td class=\"p-2\">${(r[h]??'')}</td>`).join('');
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td class=\"p-2\"><input type=\"checkbox\" data-i=\"${i}\" /></td>${tds}`;
-        tbody.appendChild(tr);
-      });
-
-      $('#excelPreviewWrap').classList.remove('hidden');
-    }
-
-    $('#btnParseExcel').addEventListener('click', async ()=>{
-      const f = $('#excelFile').files[0];
-      if(!f){ toast('Choose an Excel file first.', 'error'); return; }
-      try{
-        const data = await f.arrayBuffer();
-        const wb = XLSX.read(data, { type:'array' });
-        const first = wb.SheetNames[0];
-        const ws = wb.Sheets[first];
-        const rows = XLSX.utils.sheet_to_json(ws, { defval:'', raw:true });
-
-        // Convert Excel serial dates to ISO-like strings for any numeric-looking date fields
-        rows.forEach(row=>{
-          Object.keys(row).forEach(k=>{
-            const val = row[k];
-            if(typeof val === 'number' && String(k).toLowerCase().includes('date')){
-              const d = XLSX.SSF.parse_date_code(val);
-              if(d){ row[k] = `${d.y.toString().padStart(4,'0')}-${d.m.toString().padStart(2,'0')}-${d.d.toString().padStart(2,'0')}`; }
-            }
-          });
-        });
-
-        if(rows.length === 0){ toast('No rows found in first sheet.', 'error'); return; }
-        renderExcelPreview(rows);
-        toast(`Parsed ${rows.length} row(s). Select any to import.`, 'success');
-      }catch(err){ toast('Excel parse error: ' + err.message, 'error'); }
-    });
-
-    $('#btnUseExcelHeaders').addEventListener('click', ()=>{
-      if(!excelHeaders.length){ toast('Preview an Excel file first.', 'error'); return; }
-      setSchema(excelHeaders);
-      toast('Schema updated from Excel headers.', 'success');
-    });
-
-    $('#btnImportSelected').addEventListener('click', ()=>{
-      const checks = $$('#excelTbody input[type="checkbox"]:checked');
-      if(checks.length === 0){ toast('Select at least one row to import.', 'error'); return; }
-      const rows = checks.map(cb=> excelRows[+cb.dataset.i]);
-      const fields = readSchema();
-      const normalized = rows.map(r=>{
-        const obj = {};
-        fields.forEach(k=>{ obj[k] = (r[k] ?? ''); });
-        return obj;
-      });
-      session.push(...normalized);
-      refreshSessionTable();
-      toast(`Imported ${normalized.length} row(s) to session.`, 'success');
-    });
-
-    $('#btnClearExcel').addEventListener('click', ()=>{
-      $('#excelPreviewWrap').classList.add('hidden');
-      $('#excelThead').innerHTML = '';
-      $('#excelTbody').innerHTML = '';
-      excelRows = [];
-      excelHeaders = [];
-    });
-
-    // ===== Manual entry buttons =====
-    $('#btnAddRecord').addEventListener('click', ()=>{
-      const rec = readFormRecord();
-      session.push(rec);
-      refreshSessionTable();
-      toast('Added to session. Push when ready.', 'success');
-    });
-
-    $('#btnClearSession').addEventListener('click', ()=>{
-      session.splice(0, session.length);
-      refreshSessionTable();
-      toast('Session cleared.');
-    });
-
-    $('#btnResetSchema').addEventListener('click', ()=> setSchema(DEFAULT_SCHEMA));
-
-    // Init
-    window.addEventListener('DOMContentLoaded', ()=>{
-      loadLocal();
-      // Show ALL default headers immediately on first load
-      setSchema(DEFAULT_SCHEMA);
-      // If user had a custom schema saved, apply it after defaults render
-      const saved = JSON.parse(localStorage.getItem('schema_fields')||'null');
-      if(saved && saved.length){ setSchema(saved); }
-      $('#ghOwner').focus();
-    });
-      loadSchema();
-      $('#ghOwner').focus();
+    // Make Enter key not submit anywhere unexpectedly
+    document.addEventListener('keydown', (e) => {
+      const isInput = ['INPUT','TEXTAREA'].includes(e.target.tagName);
+      if (e.key === 'Enter' && isInput && e.target.type !== 'textarea') e.preventDefault();
     });
   </script>
 </body>
