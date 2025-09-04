@@ -2,365 +2,511 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Excel Uploader & Editor • GitHub Pages</title>
-  <meta name="description" content="Upload, edit, fill, and save Excel/CSV files back to GitHub using the Contents API. Single-file app for GitHub Pages." />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Data Entry → GitHub JSON (Dynamic Excel Fields)</title>
+  <meta name="description" content="Single-file GitHub Pages app to enter data, import from Excel, and append everything to one JSON file in a repo. Now dynamically uses *all* Excel columns as fields." />
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- SheetJS for reading/writing Excel files in the browser -->
+  <!-- SheetJS for Excel parsing -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <style>
     .kbd{border:1px solid #e5e7eb;border-bottom-width:3px;border-radius:.375rem;padding:.125rem .375rem;font-size:.75rem}
-    /* Top-center toast */
-    #toast{position:fixed;top:1rem;left:50%;transform:translateX(-50%);
-      background:#111827;color:white;padding:12px 16px;border-radius:12px;box-shadow:0 10px 20px rgba(0,0,0,.15);
-      opacity:0;pointer-events:none;transition:opacity .2s, transform .2s;z-index:50}
-    #toast.show{opacity:1;pointer-events:auto;transform:translateX(-50%) translateY(0)}
-    table { border-collapse: collapse; } 
-    td, th { border: 1px solid #e5e7eb; padding: 6px 8px; }
-    td[contenteditable="true"]:focus { outline: 2px solid #60a5fa; background: #eff6ff; }
-    .scroll-wrap{overflow:auto; max-height: 60vh}
+    #messageBox{transition:all .3s ease}
+    .input{border:1px solid #e5e7eb;border-radius:0.75rem;padding:0.5rem 0.75rem;width:100%}
+    .label{font-size:.875rem;color:#6b7280;margin-bottom:.25rem;display:block}
   </style>
 </head>
-<body class="bg-gray-50 min-h-screen">
-  <!-- Toast -->
-  <div id="toast"></div>
+<body class="bg-gray-100 min-h-screen">
+  <!-- Toast / Message Box (top center) -->
+  <div id="messageBox" class="fixed top-4 left-1/2 -translate-x-1/2 z-50 p-4 rounded-md shadow-lg bg-white text-gray-800 opacity-0 scale-95"></div>
 
-  <div class="max-w-7xl mx-auto p-6">
-    <header class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between mb-4">
+  <main class="max-w-6xl mx-auto p-4 md:p-8">
+    <header class="mb-6 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
       <div>
-        <h1 class="text-2xl sm:text-3xl font-bold text-gray-800">Excel Uploader & Editor</h1>
-        <p class="text-gray-500">Upload a .xlsx or .csv, edit in the browser, auto-fill blanks, then save back to GitHub.</p>
+        <h1 class="text-3xl md:text-4xl font-bold text-gray-900">Data Entry → GitHub JSON</h1>
+        <p class="text-gray-600">Dynamically uses <span class="font-semibold">all columns</span> from your Excel file as fields. Append to a single JSON file.</p>
       </div>
-      <div class="flex flex-wrap gap-2">
-        <label class="inline-flex items-center gap-2 text-sm bg-white border rounded-xl px-3 py-2 shadow-sm">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z"/><path d="M8 4v16M16 4v16M4 8h16M4 16h16"/></svg>
-          <input id="fileInput" type="file" accept=".xlsx,.xls,.csv" class="hidden" />
-          <span class="font-medium">Choose file</span>
-        </label>
-        <button id="downloadCsv" class="text-sm bg-white border rounded-xl px-3 py-2 shadow-sm">Download CSV</button>
-        <button id="downloadXlsx" class="text-sm bg-white border rounded-xl px-3 py-2 shadow-sm">Download XLSX</button>
+      <div class="flex items-center gap-2 text-sm">
+        <span class="kbd">GitHub</span>
+        <span class="text-gray-400">•</span>
+        <span class="kbd">JSON</span>
+        <span class="text-gray-400">•</span>
+        <span class="kbd">Excel</span>
       </div>
     </header>
 
-    <!-- GitHub Settings -->
-    <section class="bg-white rounded-2xl shadow p-4 mb-4">
-      <div class="flex flex-wrap items-end gap-3">
+    <!-- GitHub Connection Card -->
+    <section class="bg-white rounded-2xl shadow p-5 md:p-6 mb-6">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-xl font-semibold">GitHub Connection</h2>
+        <button id="btnConnect" class="px-3 py-2 rounded-xl bg-gray-900 text-white hover:bg-gray-800">Connect</button>
+      </div>
+      <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-3">
         <div>
-          <label class="block text-xs text-gray-500">Owner / Org</label>
-          <input id="ghOwner" class="border rounded-lg px-3 py-2 w-48" placeholder="your-username-or-org" />
+          <label class="label">Owner / Org</label>
+          <input id="ghOwner" class="input" placeholder="your-username-or-org" />
         </div>
         <div>
-          <label class="block text-xs text-gray-500">Repository</label>
-          <input id="ghRepo" class="border rounded-lg px-3 py-2 w-48" placeholder="your-repo" />
+          <label class="label">Repository</label>
+          <input id="ghRepo" class="input" placeholder="your-repo" />
         </div>
         <div>
-          <label class="block text-xs text-gray-500">Branch</label>
-          <input id="ghBranch" class="border rounded-lg px-3 py-2 w-36" value="main" />
+          <label class="label">Branch</label>
+          <input id="ghBranch" class="input" value="main" />
         </div>
-        <div class="flex-1 min-w-[240px]">
-          <label class="block text-xs text-gray-500">Path in repo (e.g. data/sheet.xlsx or data/sheet.csv)</label>
-          <input id="ghPath" class="border rounded-lg px-3 py-2 w-full" placeholder="data/myfile.xlsx" />
+        <div>
+          <label class="label">JSON Path in Repo</label>
+          <input id="ghPath" class="input" value="data/records.json" />
         </div>
-        <div class="flex-1 min-w-[240px]">
-          <label class="block text-xs text-gray-500">GitHub Fine-grained PAT (repo contents: read & write)</label>
-          <input id="ghToken" type="password" class="border rounded-lg px-3 py-2 w-full" placeholder="ghp_..." autocomplete="off" />
+        <div class="lg:col-span-4">
+          <label class="label">GitHub Personal Access Token (Fine-grained or classic, repo:contents)</label>
+          <input id="ghToken" type="password" class="input" placeholder="ghp_... or github_pat_..." />
+          <p class="text-xs text-gray-500 mt-1">Tip: For public Pages, prefer a fine‑grained token scoped only to this repo and "Contents: Read & Write".</p>
         </div>
       </div>
-      <div class="flex flex-wrap gap-2 mt-3">
-        <button id="btnConnect" class="bg-indigo-600 text-white rounded-xl px-4 py-2">Connect</button>
-        <button id="btnSaveCsv" class="bg-emerald-600 text-white rounded-xl px-4 py-2">Save as CSV</button>
-        <button id="btnSaveXlsx" class="bg-emerald-700 text-white rounded-xl px-4 py-2">Save as XLSX</button>
-        <span class="text-xs text-gray-500">Commits use the GitHub Contents API. Your token is kept in-memory only.</span>
+      <div class="mt-3 flex flex-wrap gap-2">
+        <button id="btnSaveGhSettings" class="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200">Save Settings (Local)</button>
+        <button id="btnTestLoad" class="px-3 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-500">Test Load JSON</button>
+        <button id="btnCreateIfMissing" class="px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-500">Create File If Missing</button>
       </div>
     </section>
 
-    <!-- Tools -->
-    <section class="bg-white rounded-2xl shadow p-4 mb-4">
-      <div class="flex flex-wrap gap-2">
-        <button id="btnFillDown" class="bg-gray-100 rounded-xl px-3 py-2">Fill down blanks (per column)</button>
-        <button id="btnFillZero" class="bg-gray-100 rounded-xl px-3 py-2">Replace empty numeric cells with 0</button>
-        <button id="btnTrim" class="bg-gray-100 rounded-xl px-3 py-2">Trim whitespace</button>
-        <button id="btnAddRow" class="bg-gray-100 rounded-xl px-3 py-2">Add row</button>
-        <button id="btnAddCol" class="bg-gray-100 rounded-xl px-3 py-2">Add column</button>
-        <button id="btnValidate" class="bg-gray-100 rounded-xl px-3 py-2">Validate (report blanks)</button>
+    <!-- Schema (Fields) Card -->
+    <section class="bg-white rounded-2xl shadow p-5 md:p-6 mb-6">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-xl font-semibold">Fields / Schema</h2>
+        <div class="flex gap-2">
+          <button id="btnUseExcelHeaders" class="px-3 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-500">Use Headers From Excel Preview</button>
+          <button id="btnResetSchema" class="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200">Reset</button>
+        </div>
+      </div>
+      <p class="text-gray-600 text-sm mb-3">List of field names used for manual entry and JSON keys. Automatically fills from your Excel preview, including <em>all columns</em>.</p>
+      <textarea id="schemaBox" rows="3" class="w-full input" placeholder="One field per line"></textarea>
+      <div class="text-xs text-gray-500 mt-2">Notes: Trailing spaces are trimmed; names are used as JSON keys. Keep one field per line.</div>
+    </section>
+
+    <!-- Data Entry Card (dynamic) -->
+    <section class="bg-white rounded-2xl shadow p-5 md:p-6 mb-6">
+      <h2 class="text-xl font-semibold mb-4">Manual Data Entry</h2>
+      <div id="dynamicForm" class="grid md:grid-cols-2 lg:grid-cols-3 gap-3"></div>
+      <div class="mt-4 flex flex-wrap gap-2">
+        <button id="btnAddRecord" class="px-3 py-2 rounded-xl bg-gray-900 text-white hover:bg-gray-800">Add Record</button>
+        <button id="btnLoadAll" class="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200">Load Current JSON</button>
+      </div>
+
+      <div class="mt-4">
+        <h3 class="font-semibold mb-2">Current Session Records (not yet pushed)</h3>
+        <div class="overflow-auto border rounded-xl">
+          <table class="min-w-full text-sm" id="sessionTable">
+            <thead class="bg-gray-50" id="sessionThead"></thead>
+            <tbody id="sessionTbody"></tbody>
+          </table>
+        </div>
+        <div class="mt-3 flex gap-2">
+          <button id="btnPushSession" class="px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-500">Push to GitHub JSON</button>
+          <button id="btnClearSession" class="px-3 py-2 rounded-xl bg-rose-600 text-white hover:bg-rose-500">Clear Session</button>
+        </div>
       </div>
     </section>
 
-    <!-- Grid -->
-    <section class="bg-white rounded-2xl shadow p-4">
-      <div id="sheetMeta" class="text-sm text-gray-500 mb-2">No file loaded.</div>
-      <div class="scroll-wrap border rounded-xl">
-        <table id="grid" class="w-full text-sm"></table>
+    <!-- Excel Import Card -->
+    <section class="bg-white rounded-2xl shadow p-5 md:p-6 mb-6">
+      <h2 class="text-xl font-semibold mb-4">Import from Excel (Select Any Rows)</h2>
+      <div class="flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
+        <div class="flex items-center gap-2">
+          <input type="file" id="excelFile" accept=".xlsx,.xls" class="block" />
+          <button id="btnParseExcel" class="px-3 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-500">Preview</button>
+        </div>
+        <div class="text-sm text-gray-600">Reads all columns from the first sheet and shows them below.</div>
+      </div>
+
+      <div id="excelPreviewWrap" class="mt-4 hidden">
+        <div class="overflow-auto border rounded-xl">
+          <table class="min-w-full text-sm" id="excelTable">
+            <thead class="bg-gray-50" id="excelThead"></thead>
+            <tbody id="excelTbody"></tbody>
+          </table>
+        </div>
+        <div class="mt-3 flex gap-2">
+          <button id="btnImportSelected" class="px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-500">Import Selected Rows to Session</button>
+          <button id="btnClearExcel" class="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200">Clear Preview</button>
+        </div>
       </div>
     </section>
 
-    <footer class="text-xs text-gray-400 mt-6">
-      <p>Tip: Keep large files as CSV for smaller commits & readable diffs. XLSX works too via SheetJS.</p>
-    </footer>
-  </div>
+    <!-- Live JSON snapshot -->
+    <section class="bg-white rounded-2xl shadow p-5 md:p-6">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-xl font-semibold">Live File Snapshot</h2>
+        <button id="btnRefreshSnapshot" class="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200">Refresh</button>
+      </div>
+      <pre id="jsonSnapshot" class="text-xs md:text-sm bg-gray-50 border rounded-xl p-3 overflow-auto h-64">(No data loaded yet)</pre>
+    </section>
+  </main>
 
-<script>
-  // ---------- Utilities ----------
-  const $ = sel => document.querySelector(sel);
-  const toast = (msg, type="info") => {
-    const t = $('#toast');
-    t.textContent = msg;
-    t.style.background = type === 'error' ? '#991b1b' : (type==='success'?'#065f46':'#111827');
-    t.classList.add('show');
-    setTimeout(() => t.classList.remove('show'), 2200);
-  };
+  <script>
+    // ===== Utilities =====
+    const $ = (sel) => document.querySelector(sel);
+    const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
-  const gridEl = $('#grid');
-  let data = [[]]; // 2D array
-  let header = []; // optional header row
-  let hasHeader = true; // assume first row is header if detected from file
-  let fileName = '';
+    function toast(msg, type = 'info'){
+      const box = document.getElementById('messageBox');
+      box.textContent = msg;
+      box.className = 'fixed top-4 left-1/2 -translate-x-1/2 z-50 p-4 rounded-md shadow-lg ' + (type==='error' ? 'bg-rose-50 text-rose-700 border border-rose-200' : type==='success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-white text-gray-800 border');
+      box.style.opacity = '1';
+      box.style.transform = 'translateX(-50%) scale(1)';
+      setTimeout(()=>{
+        box.style.opacity = '0';
+        box.style.transform = 'translateX(-50%) scale(.95)';
+      }, 2500);
+    }
 
-  function renderTable(){
-    gridEl.innerHTML = '';
-    if(!data || data.length === 0){ gridEl.innerHTML = '<tr><td class="p-3 text-gray-400">No data</td></tr>'; return; }
-    const thead = document.createElement('thead');
-    const tbody = document.createElement('tbody');
+    // ===== Schema management =====
+    const DEFAULT_SCHEMA = [
+      'MONTH',
+      'CHECKED DATE',
+      'PROSSESS DATE...QC REFERNCE',
+      'SECTION 05',
+      'VEDIO CALL VERIFIED',
+      'QC AGENT'
+    ];
 
-    // Build header (A, B, C...) if no header available
-    const cols = Math.max(...data.map(r => r.length));
-    const defaultHdr = Array.from({length: cols}, (_,i)=> XLSX.utils.encode_col(i));
-    const hdrRow = document.createElement('tr');
-    const hdrCells = (hasHeader && data[0]) ? data[0].map((v,i)=> v===''? defaultHdr[i]: v) : defaultHdr;
-    hdrCells.forEach((h,i)=>{
-      const th = document.createElement('th');
-      th.className='bg-gray-50 sticky top-0 z-10';
-      th.textContent = h ?? '';
-      th.contentEditable = hasHeader; // allow renaming header if present
-      th.addEventListener('input', ()=>{ if(hasHeader) data[0][i] = th.textContent; });
-      hdrRow.appendChild(th);
-    });
-    thead.appendChild(hdrRow);
+    function readSchema(){
+      const lines = $('#schemaBox').value.split(/
+?
+/)
+        .map(s=>s.trim())
+        .filter(Boolean);
+      return lines.length ? lines : DEFAULT_SCHEMA;
+    }
 
-    const startRow = hasHeader ? 1 : 0;
-    for(let r = startRow; r < data.length; r++){
+    function setSchema(fields){
+      const uniq = Array.from(new Set(fields.map(f=> (f||'').toString().trim()))).filter(Boolean);
+      $('#schemaBox').value = uniq.join('
+');
+      buildDynamicForm(uniq);
+      refreshSessionTableHeaders(uniq);
+      localStorage.setItem('schema_fields', JSON.stringify(uniq));
+    }
+
+    function loadSchema(){
+      const saved = JSON.parse(localStorage.getItem('schema_fields')||'null');
+      setSchema(saved && saved.length ? saved : DEFAULT_SCHEMA);
+    }
+
+    function buildDynamicForm(fields){
+      const cont = $('#dynamicForm');
+      cont.innerHTML = '';
+      fields.forEach(name=>{
+        const wrap = document.createElement('div');
+        wrap.innerHTML = `<label class="label">${name}</label><input class="input dyn" data-k="${name}">`;
+        cont.appendChild(wrap);
+      });
+    }
+
+    function refreshSessionTableHeaders(fields){
+      const thead = $('#sessionThead');
+      thead.innerHTML = '';
       const tr = document.createElement('tr');
-      for(let c = 0; c < cols; c++){
-        const td = document.createElement('td');
-        td.contentEditable = true;
-        td.textContent = (data[r] && data[r][c] !== undefined) ? data[r][c] : '';
-        td.addEventListener('input', () => { ensureSize(r, c); data[r][c] = td.textContent; });
-        tr.appendChild(td);
-      }
-      tbody.appendChild(tr);
+      fields.forEach(h=>{
+        const th = document.createElement('th'); th.className='p-2 text-left'; th.textContent=h; tr.appendChild(th);
+      });
+      const thx = document.createElement('th'); thx.className='p-2 text-left'; thx.textContent='—'; tr.appendChild(thx);
+      thead.appendChild(tr);
     }
 
-    gridEl.appendChild(thead);
-    gridEl.appendChild(tbody);
-    $('#sheetMeta').textContent = `${fileName || 'Untitled'} • ${data.length} rows x ${cols} cols`;
-  }
-
-  function ensureSize(r,c){
-    while(data.length <= r) data.push([]);
-    if(!data[r]) data[r] = [];
-    while(data[r].length <= c) data[r].push('');
-  }
-
-  function fillDown(){
-    const startRow = hasHeader ? 1 : 0;
-    const cols = Math.max(...data.map(r => r.length));
-    for(let c=0;c<cols;c++){
-      let last = '';
-      for(let r=startRow;r<data.length;r++){
-        if(!data[r]) data[r] = [];
-        if(data[r][c] === undefined) data[r][c] = '';
-        if(data[r][c] === '' && last !== '') data[r][c] = last;
-        if(data[r][c] !== '') last = data[r][c];
-      }
+    function normalizeRecordDynamic(obj){
+      const fields = readSchema();
+      const rec = {};
+      fields.forEach(k=>{ rec[k] = obj[k] ?? ''; });
+      return rec;
     }
-  }
 
-  function fillZero(){
-    const startRow = hasHeader ? 1 : 0;
-    const cols = Math.max(...data.map(r => r.length));
-    for(let r=startRow;r<data.length;r++){
-      for(let c=0;c<cols;c++){
-        const v = data[r][c];
-        if(v === '') data[r][c] = '0';
-      }
+    // ===== Local settings =====
+    function saveLocal(){
+      const cfg = getGhCfg();
+      localStorage.setItem('gh_cfg', JSON.stringify(cfg));
+      toast('Settings saved locally.', 'success');
     }
-  }
-
-  function trimAll(){
-    for(let r=0;r<data.length;r++){
-      for(let c=0;c<(data[r]?.length||0);c++){
-        const v = data[r][c];
-        if(typeof v === 'string') data[r][c] = v.trim();
-      }
-    }
-  }
-
-  function addRow(){
-    const cols = Math.max(...data.map(r => r.length));
-    data.push(Array.from({length: cols}, ()=>''));
-  }
-
-  function addCol(){
-    const cols = Math.max(...data.map(r => r.length)) + 1;
-    data = data.map((r,i)=>{ const row = r? [...r] : []; while(row.length<cols) row.push(''); return row; });
-    if(hasHeader){ data[0][cols-1] = `Col${cols}`; }
-  }
-
-  function validate(){
-    const startRow = hasHeader ? 1 : 0;
-    let blanks = 0;
-    for(let r=startRow;r<data.length;r++){
-      for(let c=0;c<(data[r]?.length||0);c++){
-        if((data[r][c]??'') === '') blanks++;
-      }
-    }
-    toast(`${blanks} blank cells found (excluding header)`, blanks? 'info':'success');
-  }
-
-  // ---------- Load file ----------
-  $('#fileInput').addEventListener('change', async (e)=>{
-    const file = e.target.files[0]; if(!file) return;
-    fileName = file.name;
-    const ext = file.name.split('.').pop().toLowerCase();
-    const buffer = await file.arrayBuffer();
-    if(ext === 'csv'){
-      const text = new TextDecoder().decode(new Uint8Array(buffer));
-      const rows = text.split(/\r?\n/).map(line=> line.split(','));
-      // detect header if first row is non-numeric and subsequent rows are numeric-ish
-      hasHeader = rows.length>1 && rows[0].some(v=>isNaN(Number(v))) ? true : true;
-      data = rows;
-      renderTable();
-      toast('CSV loaded', 'success');
-    } else {
-      const wb = XLSX.read(buffer, {type:'array'});
-      const sheet = wb.Sheets[wb.SheetNames[0]];
-      const aoa = XLSX.utils.sheet_to_json(sheet, {header:1, raw:false});
-      hasHeader = aoa.length>1 && aoa[0].some(v=>v!=='' );
-      data = aoa;
-      renderTable();
-      toast('Excel loaded', 'success');
-    }
-  });
-
-  // ---------- Download ----------
-  $('#downloadCsv').addEventListener('click', ()=>{
-    const startRow = 0; // keep header row as-is
-    const csv = data.map(row => row.map(v => typeof v === 'string' && v.includes(',') ? `"${v.replace(/"/g,'""')}"` : (v??'')).join(',')).join('\n');
-    const blob = new Blob([csv], {type: 'text/csv'});
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = (fileName?.replace(/\.(xlsx|xls)$/i,'') || 'sheet') + '.csv';
-    a.click();
-  });
-
-  $('#downloadXlsx').addEventListener('click', ()=>{
-    const ws = XLSX.utils.aoa_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
-    XLSX.writeFile(wb, (fileName || 'sheet') + (fileName.endsWith('.xlsx')? '' : '.xlsx'));
-  });
-
-  // ---------- Tools ----------
-  $('#btnFillDown').addEventListener('click', ()=>{ fillDown(); renderTable(); toast('Fill-down applied','success'); });
-  $('#btnFillZero').addEventListener('click', ()=>{ fillZero(); renderTable(); toast('Empty numeric cells → 0','success'); });
-  $('#btnTrim').addEventListener('click', ()=>{ trimAll(); renderTable(); toast('Whitespace trimmed','success'); });
-  $('#btnAddRow').addEventListener('click', ()=>{ addRow(); renderTable(); });
-  $('#btnAddCol').addEventListener('click', ()=>{ addCol(); renderTable(); });
-  $('#btnValidate').addEventListener('click', ()=> validate());
-
-  // ---------- GitHub API helpers ----------
-  const gh = {
-    owner: '', repo: '', branch: 'main', path: '', token: '',
-    async getFile(){
-      const url = `https://api.github.com/repos/${this.owner}/${this.repo}/contents/${encodeURIComponent(this.path)}?ref=${this.branch}`;
-      const res = await fetch(url, { headers: { Authorization: `Bearer ${this.token}`, 'Accept': 'application/vnd.github+json' } });
-      if(res.status === 404) return { sha: null };
-      if(!res.ok) throw new Error(`GitHub GET failed: ${res.status} ${await res.text()}`);
-      const j = await res.json();
-      return { sha: j.sha };
-    },
-    async putFile(contentB64, message){
-      const url = `https://api.github.com/repos/${this.owner}/${this.repo}/contents/${encodeURIComponent(this.path)}`;
-      const current = await this.getFile();
-      const body = { message, content: contentB64, branch: this.branch };
-      if(current.sha) body.sha = current.sha;
-      const res = await fetch(url, { method:'PUT', headers: { Authorization: `Bearer ${this.token}`, 'Accept': 'application/vnd.github+json' }, body: JSON.stringify(body) });
-      if(!res.ok) throw new Error(`GitHub PUT failed: ${res.status} ${await res.text()}`);
-      return res.json();
-    },
-    async connect(){
+    function loadLocal(){
       try{
-        const url = `https://api.github.com/repos/${this.owner}/${this.repo}`;
-        const res = await fetch(url, { headers: { Authorization: `Bearer ${this.token}`, 'Accept': 'application/vnd.github+json' } });
-        if(!res.ok) throw new Error(`Connect failed: ${res.status}`);
-        const j = await res.json();
-        toast(`Connected to ${j.full_name}`, 'success');
-      }catch(e){ toast(e.message, 'error'); }
+        const cfg = JSON.parse(localStorage.getItem('gh_cfg')||'{}');
+        if(cfg.owner) $('#ghOwner').value = cfg.owner;
+        if(cfg.repo) $('#ghRepo').value = cfg.repo;
+        if(cfg.branch) $('#ghBranch').value = cfg.branch;
+        if(cfg.path) $('#ghPath').value = cfg.path;
+        if(cfg.token) $('#ghToken').value = cfg.token; // optional
+      }catch{ /* ignore */ }
     }
-  };
 
-  function refreshGhFromInputs(){
-    gh.owner = $('#ghOwner').value.trim();
-    gh.repo = $('#ghRepo').value.trim();
-    gh.branch = $('#ghBranch').value.trim() || 'main';
-    gh.path = $('#ghPath').value.trim();
-    gh.token = $('#ghToken').value.trim();
-  }
-
-  $('#btnConnect').addEventListener('click', ()=>{ refreshGhFromInputs(); gh.connect(); });
-
-  async function saveAsCsv(){
-    refreshGhFromInputs();
-    if(!gh.owner || !gh.repo || !gh.path || !gh.token) return toast('Owner, repo, path, token required', 'error');
-    try{
-      const csv = data.map(row => row.map(v => typeof v === 'string' && v.includes(',') ? `"${v.replace(/"/g,'""')}"` : (v??'')).join(',')).join('\n');
-      const b64 = btoa(unescape(encodeURIComponent(csv)));
-      await gh.putFile(b64, `Update ${gh.path} via web editor`);
-      toast('Saved CSV to GitHub','success');
-    }catch(e){ toast(e.message, 'error'); }
-  }
-
-  async function saveAsXlsx(){
-    refreshGhFromInputs();
-    if(!gh.owner || !gh.repo || !gh.path || !gh.token) return toast('Owner, repo, path, token required', 'error');
-    try{
-      const ws = XLSX.utils.aoa_to_sheet(data);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
-      const wbout = XLSX.write(wb, {type:'array', bookType:'xlsx'});
-      // Convert to Base64
-      const b64 = arrayBufferToBase64(wbout);
-      await gh.putFile(b64, `Update ${gh.path} via web editor (xlsx)`);
-      toast('Saved XLSX to GitHub','success');
-    }catch(e){ toast(e.message, 'error'); }
-  }
-
-  function arrayBufferToBase64(buffer){
-    let binary = '';
-    const bytes = new Uint8Array(buffer);
-    const chunk = 0x8000;
-    for(let i = 0; i < bytes.length; i += chunk){
-      const sub = bytes.subarray(i, i + chunk);
-      binary += String.fromCharCode.apply(null, sub);
+    function getGhCfg(){
+      return {
+        owner: $('#ghOwner').value.trim(),
+        repo: $('#ghRepo').value.trim(),
+        branch: $('#ghBranch').value.trim() || 'main',
+        path: $('#ghPath').value.trim() || 'data/records.json',
+        token: $('#ghToken').value.trim()
+      };
     }
-    return btoa(binary);
-  }
 
-  $('#btnSaveCsv').addEventListener('click', saveAsCsv);
-  $('#btnSaveXlsx').addEventListener('click', saveAsXlsx);
+    function ghHeaders(token){
+      return {
+        'Accept':'application/vnd.github+json',
+        'Authorization': token ? `Bearer ${token}` : undefined,
+        'X-GitHub-Api-Version':'2022-11-28',
+        'Content-Type':'application/json'
+      };
+    }
 
-  // Prefill from query string (optional): ?owner=&repo=&branch=&path=
-  const qs = new URLSearchParams(location.search);
-  if(qs.get('owner')) $('#ghOwner').value = qs.get('owner');
-  if(qs.get('repo')) $('#ghRepo').value = qs.get('repo');
-  if(qs.get('branch')) $('#ghBranch').value = qs.get('branch');
-  if(qs.get('path')) $('#ghPath').value = qs.get('path');
+    function contentsUrl({owner, repo, path}){
+      return `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodeURIComponent(path)}`;
+    }
 
-  // Initial empty grid
-  data = [['ColA','ColB','ColC'],['','','']];
-  hasHeader = true;
-  fileName = '';
-  renderTable();
-</script>
+    async function ghGetFile(cfg){
+      const url = contentsUrl(cfg) + `?ref=${encodeURIComponent(cfg.branch)}`;
+      const res = await fetch(url, { headers: ghHeaders(cfg.token) });
+      if(res.status === 404) return { status: 404 };
+      if(!res.ok){
+        const t = await res.text();
+        throw new Error(`GitHub GET failed: ${res.status} ${t}`);
+      }
+      return await res.json();
+    }
+
+    async function ghPutFile(cfg, contentJson, sha = undefined, message = 'Update records.json'){
+      const url = contentsUrl(cfg);
+      const body = {
+        message,
+        content: btoa(unescape(encodeURIComponent(JSON.stringify(contentJson, null, 2)))),
+        branch: cfg.branch,
+        sha
+      };
+      const res = await fetch(url, { method:'PUT', headers: ghHeaders(cfg.token), body: JSON.stringify(body) });
+      if(!res.ok){
+        const t = await res.text();
+        throw new Error(`GitHub PUT failed: ${res.status} ${t}`);
+      }
+      return await res.json();
+    }
+
+    function emptyJson(){ return { records: [] }; }
+
+    // ===== Session Records (staged before push) =====
+    const session = [];
+
+    function refreshSessionTable(){
+      const fields = readSchema();
+      const tbody = $('#sessionTbody');
+      tbody.innerHTML = '';
+      session.forEach((r, i)=>{
+        const tr = document.createElement('tr');
+        tr.innerHTML = fields.map(k=>`<td class=\"p-2\">${(r[k]??'')}</td>`).join('') + `<td class=\"p-2\"><button class=\"text-rose-600 hover:underline\" data-i=\"${i}\">Remove</button></td>`;
+        tbody.appendChild(tr);
+      });
+      $$('#sessionTbody button').forEach(btn=>{
+        btn.addEventListener('click', (e)=>{
+          const i = +e.currentTarget.dataset.i;
+          session.splice(i,1);
+          refreshSessionTable();
+        });
+      });
+    }
+
+    // Build dynamic record from form
+    function readFormRecord(){
+      const rec = {};
+      $$('#dynamicForm .dyn').forEach(inp=>{
+        rec[inp.dataset.k] = inp.value.trim();
+      });
+      return rec;
+    }
+
+    // ===== GitHub Actions =====
+    $('#btnConnect').addEventListener('click', async ()=>{
+      try{
+        const cfg = getGhCfg();
+        const j = await ghGetFile(cfg);
+        if(j.status === 404){ toast('File not found. Click "Create File If Missing".', 'error'); return; }
+        toast('Connected! File found.', 'success');
+      }catch(err){ toast(err.message, 'error'); }
+    });
+
+    $('#btnSaveGhSettings').addEventListener('click', saveLocal);
+    loadLocal();
+
+    $('#btnTestLoad').addEventListener('click', async ()=>{
+      try{
+        const cfg = getGhCfg();
+        const j = await ghGetFile(cfg);
+        if(j.status === 404){ toast('404: File not found on branch.', 'error'); return; }
+        const content = JSON.parse(decodeURIComponent(escape(atob(j.content))));
+        $('#jsonSnapshot').textContent = JSON.stringify(content, null, 2);
+        toast('Loaded current JSON.', 'success');
+      }catch(err){ toast(err.message, 'error'); }
+    });
+
+    $('#btnCreateIfMissing').addEventListener('click', async ()=>{
+      try{
+        const cfg = getGhCfg();
+        const check = await ghGetFile(cfg);
+        if(check.status !== 404){ toast('File already exists.', 'info'); return; }
+        await ghPutFile(cfg, emptyJson(), undefined, 'Init records.json');
+        toast('Created new JSON file.', 'success');
+      }catch(err){ toast(err.message, 'error'); }
+    });
+
+    $('#btnLoadAll').addEventListener('click', async ()=>{
+      try{
+        const cfg = getGhCfg();
+        const j = await ghGetFile(cfg);
+        if(j.status === 404){ toast('404: File not found on branch.', 'error'); return; }
+        const content = JSON.parse(decodeURIComponent(escape(atob(j.content))));
+        $('#jsonSnapshot').textContent = JSON.stringify(content, null, 2);
+        toast('Loaded current JSON.', 'success');
+      }catch(err){ toast(err.message, 'error'); }
+    });
+
+    $('#btnPushSession').addEventListener('click', async ()=>{
+      if(session.length === 0){ toast('Nothing to push. Add or import rows first.', 'error'); return; }
+      try{
+        const cfg = getGhCfg();
+        // Load latest
+        let sha, content;
+        const j = await ghGetFile(cfg);
+        if(j.status === 404){
+          content = emptyJson();
+        } else {
+          sha = j.sha;
+          content = JSON.parse(decodeURIComponent(escape(atob(j.content))));
+        }
+        if(!Array.isArray(content.records)) content.records = [];
+
+        const fields = readSchema();
+        const stamped = session.map(r=>({ __added_at:new Date().toISOString(), ...normalizeRecordDynamic(r) }));
+        content.records.push(...stamped);
+
+        await ghPutFile(cfg, content, sha, `Append ${stamped.length} record(s)`);
+        session.splice(0, session.length);
+        refreshSessionTable();
+        $('#jsonSnapshot').textContent = JSON.stringify(content, null, 2);
+        toast('Pushed to GitHub JSON.', 'success');
+      }catch(err){ toast(err.message, 'error'); }
+    });
+
+    $('#btnRefreshSnapshot').addEventListener('click', ()=>$('#btnTestLoad').click());
+
+    // ===== Excel Parsing & Import =====
+    let excelRows = [];
+    let excelHeaders = [];
+
+    function getHeadersFromRows(rows){
+      const set = new Set();
+      rows.forEach(r=> Object.keys(r).forEach(k=> set.add((k||'').toString().trim())));
+      return Array.from(set).filter(Boolean);
+    }
+
+    function renderExcelPreview(rows){
+      excelRows = rows;
+      excelHeaders = getHeadersFromRows(rows);
+
+      const thead = $('#excelThead');
+      const tbody = $('#excelTbody');
+      thead.innerHTML = '';
+      tbody.innerHTML = '';
+
+      const trh = document.createElement('tr');
+      ['Select', ...excelHeaders].forEach(h=>{
+        const th = document.createElement('th'); th.className='p-2 text-left'; th.textContent=h; trh.appendChild(th);
+      });
+      thead.appendChild(trh);
+
+      rows.slice(0,500).forEach((r, i)=>{
+        const tds = excelHeaders.map(h=>`<td class=\"p-2\">${(r[h]??'')}</td>`).join('');
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td class=\"p-2\"><input type=\"checkbox\" data-i=\"${i}\" /></td>${tds}`;
+        tbody.appendChild(tr);
+      });
+
+      $('#excelPreviewWrap').classList.remove('hidden');
+    }
+
+    $('#btnParseExcel').addEventListener('click', async ()=>{
+      const f = $('#excelFile').files[0];
+      if(!f){ toast('Choose an Excel file first.', 'error'); return; }
+      try{
+        const data = await f.arrayBuffer();
+        const wb = XLSX.read(data, { type:'array' });
+        const first = wb.SheetNames[0];
+        const ws = wb.Sheets[first];
+        const rows = XLSX.utils.sheet_to_json(ws, { defval:'', raw:true });
+
+        // Convert Excel serial dates to ISO-like strings for any numeric-looking date fields
+        rows.forEach(row=>{
+          Object.keys(row).forEach(k=>{
+            const val = row[k];
+            if(typeof val === 'number' && String(k).toLowerCase().includes('date')){
+              const d = XLSX.SSF.parse_date_code(val);
+              if(d){ row[k] = `${d.y.toString().padStart(4,'0')}-${d.m.toString().padStart(2,'0')}-${d.d.toString().padStart(2,'0')}`; }
+            }
+          });
+        });
+
+        if(rows.length === 0){ toast('No rows found in first sheet.', 'error'); return; }
+        renderExcelPreview(rows);
+        toast(`Parsed ${rows.length} row(s). Select any to import.`, 'success');
+      }catch(err){ toast('Excel parse error: ' + err.message, 'error'); }
+    });
+
+    $('#btnUseExcelHeaders').addEventListener('click', ()=>{
+      if(!excelHeaders.length){ toast('Preview an Excel file first.', 'error'); return; }
+      setSchema(excelHeaders);
+      toast('Schema updated from Excel headers.', 'success');
+    });
+
+    $('#btnImportSelected').addEventListener('click', ()=>{
+      const checks = $$('#excelTbody input[type="checkbox"]:checked');
+      if(checks.length === 0){ toast('Select at least one row to import.', 'error'); return; }
+      const rows = checks.map(cb=> excelRows[+cb.dataset.i]);
+      const fields = readSchema();
+      const normalized = rows.map(r=>{
+        const obj = {};
+        fields.forEach(k=>{ obj[k] = (r[k] ?? ''); });
+        return obj;
+      });
+      session.push(...normalized);
+      refreshSessionTable();
+      toast(`Imported ${normalized.length} row(s) to session.`, 'success');
+    });
+
+    $('#btnClearExcel').addEventListener('click', ()=>{
+      $('#excelPreviewWrap').classList.add('hidden');
+      $('#excelThead').innerHTML = '';
+      $('#excelTbody').innerHTML = '';
+      excelRows = [];
+      excelHeaders = [];
+    });
+
+    // ===== Manual entry buttons =====
+    $('#btnAddRecord').addEventListener('click', ()=>{
+      const rec = readFormRecord();
+      session.push(rec);
+      refreshSessionTable();
+      toast('Added to session. Push when ready.', 'success');
+    });
+
+    $('#btnClearSession').addEventListener('click', ()=>{
+      session.splice(0, session.length);
+      refreshSessionTable();
+      toast('Session cleared.');
+    });
+
+    $('#btnResetSchema').addEventListener('click', ()=> setSchema(DEFAULT_SCHEMA));
+
+    // Init
+    window.addEventListener('DOMContentLoaded', ()=>{
+      loadLocal();
+      loadSchema();
+      $('#ghOwner').focus();
+    });
+  </script>
 </body>
 </html>
